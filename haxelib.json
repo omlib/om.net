@@ -1,0 +1,13 @@
+{
+    "name": "om.net",
+    "version": "0.1.0",
+    "description": "Web application base",
+    "tags": ["web","net"],
+    "url": "https://github.com/tong/om.net",
+    "license": "OM",
+    "contributors": ["tong"],
+    "releasenote": "See CHANGELOG.md",
+    "classPath" : "src/",
+    "dependencies": {
+    }
+}
