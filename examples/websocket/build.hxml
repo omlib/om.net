@@ -1,0 +1,16 @@
+-lib om.net
+-debug
+--each
+
+--next
+-js app.js
+-main App
+
+#--next
+#-js server.js
+#-main Server
+#-lib hxnodejs
+
+--next
+-neko server.n
+-main Server
