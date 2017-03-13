@@ -1,12 +1,19 @@
 <!DOCTYPE html>
 <html>
+
 	<head>
+
 		<meta charset="utf-8">
+
 		<title>om.net.websocket</title>
+
 		<style>
 			body {
 				font-family: monospace;
 				background: #181818; color: #313131;
+			}
+			a {
+				color: #313131;
 			}
 			input, button {
 				font-family: monospace;
@@ -21,16 +28,18 @@
 				color: #313131;
 			}
 		</style>
-		<script src="app.js" defer></script>
+
+		<script src="client.js" defer></script>
+
 	</head>
 
 	<body>
 
-		<input type="text" id="ip" value="192.168.0.18">
-		<input type="number" id="port" value="5280">
+		<input type="text" id="ip" value="127.0.0.1">
+		<input type="number" id="port" value="7700">
 		<button id="connect">CONNECT</button>
 
-		<footer class="info">Get a websocket server for testing from: <a href="https://github.com/tong/om.net/tree/master/examples/websocket/Server.hx">https://github.com/tong/om.net/tree/master/examples/websocket/Server.hx</a></footer>
+		<footer class="info">Websocket server for testing: <a href="https://github.com/tong/om.net/tree/master/examples/websocket/Server.hx">https://github.com/tong/om.net/tree/master/examples/websocket/Server.hx</a></footer>
 
 	</body>
 
