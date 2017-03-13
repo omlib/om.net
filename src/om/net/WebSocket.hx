@@ -1,25 +1,214 @@
 package om.net;
 
 import haxe.io.Bytes;
-import haxe.io.BytesInput;
-import haxe.io.BytesBuffer;
 import haxe.io.Input;
 import haxe.io.Output;
 import haxe.crypto.Sha1;
 import haxe.crypto.Base64;
 
+#if nodejs
+import js.node.Buffer;
+#end
+
+using StringTools;
+
+/**
+	https://www.w3.org/TR/websockets/
+*/
+class WebSocket {
+
+	public static inline var MAGIC_STRING = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+	public static function createHandshake( inp : Input ) : String {
+
+		//+ 'Sec-WebSocket-Version: 13\r\n'
+
+		var line = inp.readLine();
+		if( !~/^GET (\/[^\s]*) HTTP\/1\.1$/.match( line ) ) {
+			return throw 'invalid header';
+		}
+
+		//var host : String = null;
+		//var origin : String = null;
+		var skey : String = null;
+		var sversion : String = null;
+
+		var rexp = ~/^([a-zA-Z0-9\-]+): (.+)$/;
+		while( (line = inp.readLine()) != "" ) {
+			if( !rexp.match( line ) )
+				return throw 'invalid header';
+			switch rexp.matched( 1 ) {
+			case "Sec-WebSocket-Key": skey = rexp.matched( 2 );
+			case "Sec-WebSocket-Version" : sversion = rexp.matched( 2 );
+			}
+		}
+
+		var key = createKey( skey );
+
+		return
+			'HTTP/1.1 101 Switching Protocols\r\n'
+			+ 'Connection: Upgrade\r\n'
+			+ 'Upgrade: websocket\r\n'
+			+ 'Sec-WebSocket-Accept: '+key+'\r\n'
+			+ '\r\n';
+	}
+
+	public static function createKey( skey : String ) : String {
+
+		#if sys
+		return Base64.encode( Bytes.ofString( hex2data( Sha1.encode( skey + MAGIC_STRING ) ) ) );
+
+		#elseif nodejs
+		var sha1 = js.node.Crypto.createHash( 'sha1' );
+		sha1.end( skey + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', 'utf8' );
+		var buf : Buffer = sha1.read();
+		return buf.toString( 'base64' );
+
+		#end
+	}
+
+	static function hex2data( hex : String ) : String {
+		var buf = new StringBuf();
+		for( i in 0...Std.int( hex.length / 2 ) )
+			buf.add( String.fromCharCode( Std.parseInt( "0x" + hex.substr( i * 2, 2 ) ) ) );
+		return buf.toString();
+	}
+
+	#if sys
+
+	public static function readFrame( inp : Input ) : String {
+		switch inp.readByte() {
+		case 0x00 :
+			var buf = new StringBuf();
+			var byte : Int;
+			while( (byte= inp.readByte()) != 0xFF )
+				buf.add( String.fromCharCode( byte ) );
+			return buf.toString();
+		case 0x81 :
+			var len = inp.readByte();
+			if( len & 0x80 != 0 ) { // mask
+				len &= 0x7F;
+				if( len == 126 ) {
+					var b2 = inp.readByte();
+					var b3 = inp.readByte();
+					len = (b2 << 8) + b3;
+				} else if( len == 127 ) {
+					var b2 = inp.readByte();
+					var b3 = inp.readByte();
+					var b4 = inp.readByte();
+					var b5 = inp.readByte();
+					len = ( b2 << 24 ) + ( b3 << 16 ) + ( b4 << 8 ) + b5;
+				}
+				var mask = [];
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
+				var buf = new StringBuf();
+				for( n in 0...len )
+					buf.addChar( inp.readByte() ^ mask[n % 4] );
+				return buf.toString();
+			}
+		}
+		return null;
+	}
+
+	public static function writeFrame( out : Output, str : String ) {
+		out.writeByte( 0x81 );
+		var len = if( str.length < 126 ) str.length else if( str.length < 65536 ) 126 else 127;
+		out.writeByte( len | 0x00 );
+		if( str.length >= 126 ) {
+			if( str.length < 65536 ) {
+				out.writeByte( (str.length >> 8) & 0xFF );
+				out.writeByte( str.length & 0xFF );
+			} else {
+				out.writeByte( (str.length >> 24) & 0xFF );
+				out.writeByte( (str.length >> 16) & 0xFF );
+				out.writeByte( (str.length >> 8) & 0xFF );
+				out.writeByte( str.length & 0xFF );
+			}
+		}
+		out.writeString( str );
+	}
+
+	#elseif nodejs
+
+	public static function readFrame( inp : Buffer ) : String {
+		switch inp[0] {
+		case 0x00:
+			var buf = new StringBuf();
+			var byte : Int;
+			var i = 1;
+			while( (byte = inp[i] ) != 0xFF ) {
+				buf.add( String.fromCharCode( byte ) );
+				i++;
+			}
+			return buf.toString();
+		case 0x81:
+			var i = 1;
+			var len = inp[i++];
+			if( len & 0x80 != 0 ) { // mask
+				len &= 0x7F;
+				if( len == 126 ) {
+					var b2 = inp[i++];
+					var b3 = inp[i++];
+					len = (b2 << 8) + b3;
+				} else if( len == 127 ) {
+					var b2 = inp[i++];
+					var b3 = inp[i++];
+					var b4 = inp[i++];
+					var b5 = inp[i++];
+					len = ( b2 << 24 ) + ( b3 << 16 ) + ( b4 << 8 ) + b5;
+				}
+				var mask = [];
+				mask.push( inp[i++] );
+				mask.push( inp[i++] );
+				mask.push( inp[i++] );
+				mask.push( inp[i++] );
+				var buf = new StringBuf();
+				for( n in 0...len )
+					buf.addChar( inp[i++] ^ mask[n % 4] );
+				return buf.toString();
+			}
+		}
+		return null;
+	}
+
+	public static function writeFrame( str : String ) : Buffer {
+		var len = (str.length < 126) ? str.length : (str.length < 65536) ? 126 : 127;
+		var buf = new Buffer( len );
+		buf[0] = 0x81;
+		buf[1] = len | 0x00;
+		if( str.length >= 126 ) {
+			if( str.length < 65536 ) {
+				buf[2] = (str.length >> 8) & 0xFF;
+				buf[3] = str.length & 0xFF;
+			} else {
+				buf[2] = (str.length >> 24) & 0xFF;
+				buf[3] = (str.length >> 16) & 0xFF;
+				buf[4] = (str.length >> 8) & 0xFF;
+				buf[5] = str.length & 0xFF;
+			}
+		}
+		return buf;
+	}
+
+	#end
+
+}
+
+/*
 class WebSocket {
 
 	public static inline var MAGIC_STRING = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 	/**
 		Handshake with given input.
-	*/
-	public static function handshake( i : Input ) : String {
-		var l = i.readLine();
+	* /
+	public static function handshake( inp : Input ) : String {
+		var l = inp.readLine();
 		if( !~/^GET (\/[^\s]*) HTTP\/1\.1$/.match( l ) ) {
-			trace( "invalid header" );
-			return null;
+			return throw 'invalid header';
 		}
 		var host : String = null;
 		var origin : String = null;
@@ -27,85 +216,274 @@ class WebSocket {
 		var sversion : String = null;
 		var r = ~/^([a-zA-Z0-9\-]+): (.+)$/;
 		while( true ) {
-			l = i.readLine();
+			l = inp.readLine();
 			if( l == "" )
 				break;
 			if( !r.match( l ) )
 				return null;
-			switch( r.matched(1) ) {
+			switch r.matched(1) {
 			//case "Upgrade" :
 			//case "Connection" :
 			case "Host" : host = r.matched(2);
 			case "Origin" : origin = r.matched(2);
-			case "Sec-WebSocket-Key" : skey = r.matched(2);
+			//case "Sec-WebSocket-Accept" :
+			case "Sec-WebSocket-Key": skey = r.matched(2);
 			case "Sec-WebSocket-Version" : sversion = r.matched(2);
-			case "Cookie" :
-			case "" : break;
+			case "Cookie":
+			case "" :
+				break;
+		//	default:
+		//		trace( 'Unhandled websocket header value: '+l );
 			}
 		}
+
+		#if sys
 		var key = Base64.encode( Bytes.ofString(( hex2data( Sha1.encode( StringTools.trim( skey ) + MAGIC_STRING ) ) ) ) );
-		var s = "HTTP/1.1 101 Switching Protocols\r\n"
-			  + "Upgrade: websocket\r\n"
+		#elseif nodejs
+		var key = js.node.Crypto.createHash( 'sha1' ).update( skey + MAGIC_STRING, 'utf8' ).digest().toString( 'base64' );
+		#end
+
+		return "HTTP/1.1 101 Switching Protocols\r\n"
 			  + "Connection: Upgrade\r\n"
+			  + "Upgrade: websocket\r\n"
+			  //+ "Sec-WebSocket-Version: 13\r\n"
 			  + "Sec-WebSocket-Accept: " + key + "\r\n"
 			  + "\r\n";
-		return s;
 	}
 
-	public static function read( i : Input ) : String {
-		switch i.readByte() {
+	public static function readFrame( inp : Input ) : String {
+		switch inp.readByte() {
 		case 0x00 :
 			var s = new StringBuf();
 			var b : Int;
-			while( (b = i.readByte()) != 0xFF )
-				s.add( String.fromCharCode(b) );
+			while( (b = inp.readByte()) != 0xFF )
+				s.add( String.fromCharCode( b ) );
 			return s.toString();
 		case 0x81 :
-			var len = i.readByte();
+			var len = inp.readByte();
 			if( len & 0x80 != 0 ) { // mask
 				len &= 0x7F;
 				if( len == 126 ) {
-					var b2 = i.readByte();
-					var b3 = i.readByte();
+					var b2 = inp.readByte();
+					var b3 = inp.readByte();
 					len = (b2 << 8) + b3;
 				} else if( len == 127 ) {
-					var b2 = i.readByte();
-					var b3 = i.readByte();
-					var b4 = i.readByte();
-					var b5 =i.readByte();
+					var b2 = inp.readByte();
+					var b3 = inp.readByte();
+					var b4 = inp.readByte();
+					var b5 = inp.readByte();
 					len = ( b2 << 24 ) + ( b3 << 16 ) + ( b4 << 8 ) + b5;
 				}
 				var mask = [];
-				mask.push( i.readByte() );
-				mask.push( i.readByte() );
-				mask.push( i.readByte() );
-				mask.push(  i.readByte() );
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
+				mask.push( inp.readByte() );
 				var s = new StringBuf();
 				for( n in 0...len )
-					s.addChar( i.readByte() ^ mask[n % 4] );
+					s.addChar( inp.readByte() ^ mask[n % 4] );
 				return s.toString();
 			}
 		}
 		return null;
 	}
 
-	public static function write( o : Output, s : String ) {
-		o.writeByte( 0x81 );
-		var len = if( s.length < 126 ) s.length else if( s.length < 65536 ) 126 else 127;
-		o.writeByte( len | 0x00 );
-		if( s.length >= 126 ) {
-			if( s.length < 65536 ) {
-				o.writeByte( (s.length >> 8) & 0xFF );
-				o.writeByte( s.length & 0xFF );
+	#if sys
+
+	public static function writeFrame( out : Output, str : String ) {
+		out.writeByte( 0x81 );
+		var len = if( str.length < 126 ) str.length else if( str.length < 65536 ) 126 else 127;
+		out.writeByte( len | 0x00 );
+		if( str.length >= 126 ) {
+			if( str.length < 65536 ) {
+				out.writeByte( (str.length >> 8) & 0xFF );
+				out.writeByte( str.length & 0xFF );
 			} else {
-				o.writeByte( (s.length >> 24) & 0xFF );
-				o.writeByte( (s.length >> 16) & 0xFF );
-				o.writeByte( (s.length >> 8) & 0xFF );
-				o.writeByte( s.length & 0xFF );
+				out.writeByte( (str.length >> 24) & 0xFF );
+				out.writeByte( (str.length >> 16) & 0xFF );
+				out.writeByte( (str.length >> 8) & 0xFF );
+				out.writeByte( str.length & 0xFF );
 			}
 		}
-		o.writeString( s );
+		out.writeString( str );
 	}
+
+	#elseif nodejs
+
+	public static function writeFrame( str : String ) : Buffer {
+		var len = (str.length < 126) ? str.length : (str.length < 65536) ? 126 : 127;
+		var buf = new Buffer( len );
+		buf[0] = 0x81;
+		buf[1] = len | 0x00;
+		if( str.length >= 126 ) {
+			if( str.length < 65536 ) {
+					buf[2] = (str.length >> 8) & 0xFF;
+					buf[3] = str.length & 0xFF;
+			} else {
+				buf[2] = (str.length >> 24) & 0xFF;
+				buf[3] = (str.length >> 16) & 0xFF;
+				buf[4] = (str.length >> 8) & 0xFF;
+				buf[5] = str.length & 0xFF;
+			}
+		}
+		return buf;
+	}
+
+	#end
+
+
+	/*
+	#if nodejs
+
+	public static function readFrame( buf : Buffer ) : Frame {
+
+		if( buf.length < 2 ) {
+			return null;
+		}
+
+		var B = buf[0];
+		var HB = B >> 4;
+
+		if( HB % 8 != 0 ) {
+			// RSV1, RSV2 and RSV3 must be clear
+			return null;
+		}
+
+		var fin = HB == 8;
+		var opcode = B % 16;
+
+		if( opcode != 0 && opcode != 1 && opcode != 2 &&
+			opcode != 8 && opcode != 9 && opcode != 10 ) {
+				// Invalid opcode
+				return null;
+		}
+
+		if( opcode >= 8 && !fin ) {
+			// Control frames must not be fragmented
+			return null;
+		}
+
+		B = buf[1];
+
+		var hasMask = B >> 7 != 0;
+
+		if( !hasMask ) {
+			// Frames sent by clients must be masked
+			return null;
+		}
+
+		var len = B % 128;
+		var start = (hasMask) ? 6 : 2;
+
+		if( buf.length < start + len ) {
+			// Not enough data in the buffer
+			return null;
+		}
+
+		// Get the actual payload length
+		if( len == 126 ) {
+			len = buf.readUInt16BE(2);
+			start += 2;
+		} else if( len == 127 ) {
+			// Warning: JS can only store up to 2^53 in its number format
+			len = buf.readUInt32BE(2) * Std.int(Math.pow(2,32)) + buf.readUInt32BE(6 );
+			start += 8;
+		}
+		if( buf.length < start + len ) {
+			return null;
+		}
+
+		// Extract the payload
+		var payload = buf.slice( start, start + len );
+
+		if( hasMask ) {
+			// Decode with the given mask
+			var mask = buf.slice( start - 4, start );
+			//for (i = 0; i < payload.length; i++) {
+			for( i in 0...payload.length ) {
+				payload[i] ^= mask[i % 4];
+			}
+		}
+
+		buf = buf.slice( start + len );
+
+		return {
+			fin: fin,
+			opcode: opcode,
+			payload: payload
+		};
+	}
+
+	public static function writeFrame( str : String ) : Buffer {
+		var len = (str.length < 126) ? str.length : (str.length < 65536) ? 126 : 127;
+		var buf = new Buffer( len );
+		buf[0] = 0x81;
+		buf[1] = len | 0x00;
+		if( str.length >= 126 ) {
+			if( str.length < 65536 ) {
+					buf[2] = (str.length >> 8) & 0xFF;
+					buf[3] = str.length & 0xFF;
+			} else {
+				buf[2] = (str.length >> 24) & 0xFF;
+				buf[3] = (str.length >> 16) & 0xFF;
+				buf[4] = (str.length >> 8) & 0xFF;
+				buf[5] = str.length & 0xFF;
+			}
+		}
+		return buf;
+	}
+
+	public static function createPongFrame( payload : Buffer, ?masked : Bool ) : Buffer {
+	//	var payload = new Buffer( data );
+		var meta = generateMetaData( true, 10, masked == null ? false : masked, payload );
+		return Buffer.concat( [meta,payload], meta.length + payload.length );
+	}
+
+	static function generateMetaData( fin : Bool, opcode : Int, masked : Bool, payload : Buffer) {
+		//var len, meta, start, mask, i
+
+		var len = payload.length;
+
+		// Creates the buffer for meta-data
+		var meta = new Buffer(2 + (len < 126 ? 0 : (len < 65536 ? 2 : 8)) + (masked ? 4 : 0));
+
+		// Sets fin and opcode
+		meta[0] = (fin ? 128 : 0) + opcode;
+
+		// Sets the mask and length
+		meta[1] = masked ? 128 : 0;
+		var start = 2;
+		if (len < 126) {
+			meta[1] += len;
+		} else if (len < 65536) {
+			meta[1] += 126;
+			meta.writeUInt16BE(len, 2);
+			start += 2;
+		} else {
+			// Warning: JS doesn't support integers greater than 2^53
+			meta[1] += 127;
+			meta.writeUInt32BE(Math.floor(len / Math.pow(2, 32)), 2);
+			meta.writeUInt32BE(len % Std.int(Math.pow(2, 32)), 6);
+			start += 8;
+		}
+
+		// Set the mask-key
+		if (masked) {
+			var mask = new Buffer(4);
+			for(i in 0...4 ) {
+				meta[start + i] = mask[i] = Math.floor(Math.random() * 256);
+			}
+			for(i in 0...payload.length ) {
+				payload[i] ^= mask[i % 4];
+			}
+			start += 4;
+		}
+
+		return meta;
+	}
+
+	#end
+
 
 	public static function hex2data( hex : String ) : String {
 		var t = "";
@@ -115,3 +493,4 @@ class WebSocket {
 	}
 
 }
+*/
