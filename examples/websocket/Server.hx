@@ -46,18 +46,16 @@ class Server {
 			socket.on( 'data', function(buf:js.node.Buffer) {
 
 				if( handshaked ) {
+
 					var msg = WebSocket.readFrame( buf );
 					println( '  Client message: $msg' );
-					var res = new js.node.Buffer( msg );
-					socket.write( WebSocket.writeFrame( res ) );
+
+					socket.write( WebSocket.writeFrame( new js.node.Buffer( 'Howdy!' ) ) );
 
 					socket.end();
 
-
 				} else {
-					var str = buf.toString();
-					var res = WebSocket.createHandshake( new haxe.io.StringInput( str ) );
-					socket.write( res );
+					socket.write(  WebSocket.createHandshake( buf ) );
 					handshaked = true;
 				}
 			});
