@@ -1,12 +1,12 @@
 package om.net;
 
+#if sys
 import haxe.io.Bytes;
 import haxe.io.Input;
 import haxe.io.Output;
 import haxe.crypto.Sha1;
 import haxe.crypto.Base64;
-
-#if nodejs
+#elseif nodejs
 import js.node.Buffer;
 #end
 
@@ -19,6 +19,23 @@ class WebSocket {
 
 	public static inline var MAGIC_STRING = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+	static function createKey( skey : String ) : String {
+
+		#if nodejs
+		var sha1 = js.node.Crypto.createHash( 'sha1' );
+		sha1.end( skey + MAGIC_STRING, 'utf8' );
+		var buf : Buffer = sha1.read();
+		return buf.toString( 'base64' );
+
+		#else
+		return Base64.encode( Bytes.ofString( hex2data( Sha1.encode( skey + MAGIC_STRING ) ) ) );
+
+		#end
+	}
+
+	#if sys
+
+	//TODO
 	public static function createHandshake( inp : Input ) : String {
 
 		//+ 'Sec-WebSocket-Version: 13\r\n'
@@ -53,28 +70,12 @@ class WebSocket {
 			+ '\r\n';
 	}
 
-	public static function createKey( skey : String ) : String {
-
-		#if sys
-		return Base64.encode( Bytes.ofString( hex2data( Sha1.encode( skey + MAGIC_STRING ) ) ) );
-
-		#elseif nodejs
-		var sha1 = js.node.Crypto.createHash( 'sha1' );
-		sha1.end( skey + MAGIC_STRING, 'utf8' );
-		var buf : Buffer = sha1.read();
-		return buf.toString( 'base64' );
-
-		#end
-	}
-
 	static function hex2data( hex : String ) : String {
 		var buf = new StringBuf();
 		for( i in 0...Std.int( hex.length / 2 ) )
 			buf.add( String.fromCharCode( Std.parseInt( "0x" + hex.substr( i * 2, 2 ) ) ) );
 		return buf.toString();
 	}
-
-	#if sys
 
 	public static function readFrame( inp : Input ) : String {
 		switch inp.readByte() {
@@ -133,9 +134,46 @@ class WebSocket {
 
 	#elseif nodejs
 
-	public static function readFrame( inp : Buffer ) : String {
-		switch inp[0] {
+	//TODO
+	public static function createHandshake( buf : Buffer ) : String {
+
+		//+ 'Sec-WebSocket-Version: 13\r\n'
+
+		var lines = buf.toString().split( '\r\n' );
+		var line = lines.shift();
+		if( !~/^GET (\/[^\s]*) HTTP\/1\.1$/.match( line ) ) {
+			return throw 'invalid header';
+		}
+
+		//var host : String = null;
+		//var origin : String = null;
+		var skey : String = null;
+		var sversion : String = null;
+
+		var rexp = ~/^([a-zA-Z0-9\-]+): (.+)$/;
+		while( (line = lines.shift()) != "" ) {
+			if( !rexp.match( line ) )
+				return throw 'invalid header';
+			switch rexp.matched( 1 ) {
+			case "Sec-WebSocket-Key": skey = rexp.matched( 2 );
+			case "Sec-WebSocket-Version" : sversion = rexp.matched( 2 );
+			}
+		}
+
+		var key = createKey( skey );
+
+		return
+			'HTTP/1.1 101 Switching Protocols\r\n'
+			+ 'Connection: Upgrade\r\n'
+			+ 'Upgrade: websocket\r\n'
+			+ 'Sec-WebSocket-Accept: '+key+'\r\n'
+			+ '\r\n';
+	}
+
+	public static function readFrame( buf : Buffer ) : Buffer {
+		switch buf[0] {
 		case 0x00:
+			/*
 			var buf = new StringBuf();
 			var byte : Int;
 			var i = 1;
@@ -144,31 +182,33 @@ class WebSocket {
 				i++;
 			}
 			return buf.toString();
+			*/
+			return buf.slice( 1 );
 		case 0x81:
 			var i = 1;
-			var len = inp[i++];
+			var len = buf[i++];
 			if( len & 0x80 != 0 ) { // mask
 				len &= 0x7F;
 				if( len == 126 ) {
-					var b2 = inp[i++];
-					var b3 = inp[i++];
+					var b2 = buf[i++];
+					var b3 = buf[i++];
 					len = (b2 << 8) + b3;
 				} else if( len == 127 ) {
-					var b2 = inp[i++];
-					var b3 = inp[i++];
-					var b4 = inp[i++];
-					var b5 = inp[i++];
+					var b2 = buf[i++];
+					var b3 = buf[i++];
+					var b4 = buf[i++];
+					var b5 = buf[i++];
 					len = ( b2 << 24 ) + ( b3 << 16 ) + ( b4 << 8 ) + b5;
 				}
 				var mask = [];
-				mask.push( inp[i++] );
-				mask.push( inp[i++] );
-				mask.push( inp[i++] );
-				mask.push( inp[i++] );
-				var buf = new StringBuf();
+				mask.push( buf[i++] );
+				mask.push( buf[i++] );
+				mask.push( buf[i++] );
+				mask.push( buf[i++] );
+				var ret = new Buffer( len );
 				for( n in 0...len )
-					buf.addChar( inp[i++] ^ mask[n % 4] );
-				return buf.toString();
+					ret[n] = buf[i++] ^ mask[n % 4];
+				return ret;
 			}
 		}
 		return null;
