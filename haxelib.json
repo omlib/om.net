@@ -1,8 +1,8 @@
 {
     "name": "om.net",
     "version": "0.0.0",
-    "description": "Net tools",
-    "tags": ["om","net","socket","websocket"],
+    "description": "Network tools",
+    "tags": ["om","net","websocket"],
     "url": "https://github.com/tong/om.net",
     "license": "OM",
     "contributors": ["tong"],
