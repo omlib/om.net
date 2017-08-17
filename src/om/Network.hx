@@ -1,12 +1,17 @@
 package om;
 
+#if nodejs
+import js.node.Net;
+import js.node.Os;
+#end
+
 class Network {
 
     #if nodejs
 
     public static function getLocalIP() : Array<String> {
         var found = new Array<String>();
-        var interfaces = js.node.Os.networkInterfaces();
+        var interfaces = Os.networkInterfaces();
         for( f in Reflect.fields( interfaces ) ) {
             var infos : NetworkInterface = Reflect.field( interfaces, f );
             for( info in infos ) {
@@ -19,7 +24,7 @@ class Network {
     }
 
     public static function isPortTaken( port : Int, callback : Bool->Void ) {
-		var srv = js.node.Net.createServer();
+		var srv = Net.createServer();
 		srv.once( 'error', function(e){
 			callback( e.code == 'EADDRINUSE' );
 		});
