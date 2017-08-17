@@ -2,4 +2,4 @@ _*
 doc/
 examples/*/*js*
 examples/*/*n
-TODO*
+test/bin/
