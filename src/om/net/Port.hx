@@ -34,11 +34,11 @@ package om.net;
 	var https = 443;
 	var smb = 445; // Microsoft-DS SMB file sharing
 	var rtsp = 554; // Real Time Streaming Protocol
-	var doom = 666; // FPS
-	var doom = 694; // Linux-HA high-availability heartbeat
-	var rsync = 873; // File synchronization protocol
+	//var doom = 666; // FPS
+	//var doom = 694; // Linux-HA high-availability heartbeat
+	//var rsync = 873; // File synchronization protocol
 
-	var rsync = 1080; // SOCKS proxy
+	//var rsync = 1080; // SOCKS proxy
 	var rtp = 5004; // Real-time Transport Protocol (RFC 3551, RFC 4571)
 	var rtcp = 5005; // Real-time Transport Protocol Control Protocol (RFC 3551, RFC 4571)
 	var sip = 5060; // Session Initiation Protocol
