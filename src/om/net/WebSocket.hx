@@ -1,19 +1,56 @@
 package om.net;
 
-#if sys
+import haxe.crypto.Base64;
+import haxe.crypto.Sha1;
 import haxe.io.Bytes;
+#if sys
 import haxe.io.Input;
 import haxe.io.Output;
-import haxe.crypto.Sha1;
-import haxe.crypto.Base64;
 #elseif nodejs
 import js.node.Buffer;
 #end
 
 using StringTools;
 
+@:enum abstract ErrorCode(Int) from Int to Int {
+
+	var normal_closure = 1000;
+	var going_away = 1001;
+	var protocol_error = 1002;
+	var unsupported_data = 1003;
+	var reserved = 1004;
+	var no_status_rcvd = 1005;
+	var abnormal_closure = 1006;
+	var invalid_frame_payload_data = 1007;
+	var policy_violation = 1008;
+	var message_too_big = 1009;
+	var mandatory_ext = 1010;
+	var internal_server_error = 1011;
+	var tls_handshake = 1015;
+
+	public static function getMeaning( code : Int ) : String {
+		return switch code {
+		case 1000: 'Normal Closure';
+		case 1001: 'Going Away';
+		case 1002: 'Protocol error ';
+		case 1003: 'Unsupported Data';
+		case 1004: '---Reserved----';
+		case 1005: 'No Status Rcvd';
+		case 1006: 'Abnormal Closure';
+		case 1007: 'Invalid frame payload data';
+		case 1008: 'Policy Violation';
+		case 1009: 'Message Too Big';
+		case 1010: 'Mandatory Ext.';
+		case 1011: 'Internal Server Serror';
+		case 1015: 'TLS handshake ';
+		case _: null;
+		}
+	}
+}
+
 /**
 	https://www.w3.org/TR/websockets/
+	https://tools.ietf.org/html/rfc6455
 */
 class WebSocket {
 
@@ -68,13 +105,6 @@ class WebSocket {
 			+ 'Upgrade: websocket\r\n'
 			+ 'Sec-WebSocket-Accept: '+key+'\r\n'
 			+ '\r\n';
-	}
-
-	static function hex2data( hex : String ) : String {
-		var buf = new StringBuf();
-		for( i in 0...Std.int( hex.length / 2 ) )
-			buf.add( String.fromCharCode( Std.parseInt( "0x" + hex.substr( i * 2, 2 ) ) ) );
-		return buf.toString();
 	}
 
 	public static function readFrame( inp : Input ) : String {
@@ -250,5 +280,12 @@ class WebSocket {
 	}
 
 	#end
+
+	static function hex2data( hex : String ) : String {
+		var buf = new StringBuf();
+		for( i in 0...Std.int( hex.length / 2 ) )
+			buf.add( String.fromCharCode( Std.parseInt( "0x" + hex.substr( i * 2, 2 ) ) ) );
+		return buf.toString();
+	}
 
 }
