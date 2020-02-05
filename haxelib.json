@@ -3,12 +3,13 @@
     "version": "0.0.0",
     "description": "Network tools",
     "tags": ["om","net","websocket"],
-    "url": "https://github.com/tong/om.net",
-    "license": "OM",
+    "url": "https://github.com/omlib/om.net",
+    "license": "Public",
     "contributors": ["tong"],
     "releasenote": "See CHANGELOG.md",
     "classPath" : "src/",
     "dependencies": {
-        "om.core": ""
+        "om.core": "",
+        "om.crypto": ""
     }
 }
